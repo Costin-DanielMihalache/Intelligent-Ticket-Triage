@@ -151,6 +151,11 @@ activemq-data/
 .env
 .envrc
 .venv
+api/data/
+api/model_files/
+api/ticket_triage.log
+__pychache__/
+*.pyc
 env/
 venv/
 ENV/
