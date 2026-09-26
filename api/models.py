@@ -13,9 +13,10 @@ import time
 import logging
 import json
 from datetime import datetime
+from huggingface_hub import hf_hub_download
 
 
-MODEL_PATH="model_files/ticket-classifier-distilbert"
+MODEL_PATH="mihalachecostindaniel/ticket-classifier-distilbert"
 
 tokenizer=DistilBertTokenizer.from_pretrained(MODEL_PATH)
 model_bert=DistilBertForSequenceClassification.from_pretrained(MODEL_PATH)
@@ -23,8 +24,11 @@ model_bert.eval()
 
 embedder= SentenceTransformer('all-MiniLM-L6-v2')
 
-df_resolved= pd.read_csv("data/df_resolved.csv")
-ticket_embeddings=np.load("data/ticket_embeddings.npy")
+df_path=hf_hub_download(repo_id="mihalachecostindaniel/ticket-triage-data",filename="df_resolved.csv",repo_type="dataset")
+embeddings_path=hf_hub_download(repo_id="mihalachecostindaniel/ticket-triage-data",filename="ticket_embeddings.npy",repo_type="dataset")
+
+df_resolved= pd.read_csv(df_path)
+ticket_embeddings=np.load(embeddings_path)
 
 dimension=ticket_embeddings.shape[1]
 index=faiss.IndexFlatL2(dimension)
