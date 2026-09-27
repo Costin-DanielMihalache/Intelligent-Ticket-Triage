@@ -15,13 +15,15 @@ import json
 from datetime import datetime
 from huggingface_hub import hf_hub_download
 
-torch.set_grad_enabled(False)
-torch.set_num_threads(1)
+torch.set_grad_enabled(False) # inference only - no training here, saves memory/time
+torch.set_num_threads(1) # avoid over-allocating threads on resource-limited Cloud run instances
 
 MODEL_PATH="model_files/ticket-classifier-distilbert"
 
 tokenizer=DistilBertTokenizer.from_pretrained(MODEL_PATH)
 model_bert=DistilBertForSequenceClassification.from_pretrained(MODEL_PATH,torch_dtype=torch.float16)
+# float16 instead of float32: halves the model's memory footprint with minimal
+# accuracy impact - important on memory-limited cloud instances
 model_bert.eval()
 
 embedder= SentenceTransformer('model_files/all-MiniLM-L6-v2')
@@ -55,6 +57,8 @@ def find_similar_tickets_hybrid(query_text,k=5, confidence_threshold=0.5):
     query_embedding= embedder.encode([query_text]).astype('float32')
 
     if confidence >= confidence_threshold:
+        # Model is confident enough about the category -> search only within it
+        # (more relevant, but may miss good results from other categories)
         mask=df_resolved['queue']==predicted_category
         filtered_df=df_resolved[mask].reset_index(drop=True)
         filtered_embeddings=ticket_embeddings[mask.values].astype('float32')
@@ -66,6 +70,8 @@ def find_similar_tickets_hybrid(query_text,k=5, confidence_threshold=0.5):
         source_df=filtered_df
         mode="filtrat"
     else:
+        # Model is uncertain -> search across the whole dataset, to avoid
+        # missing a relevant result just because classification was unsure
         distances,indices=index.search(query_embedding,k)
         source_df=df_resolved
         mode="nefiltrat"
@@ -113,7 +119,7 @@ def generate_response_with_retry(ticket_text,similar_results,max_retries=6):
                 wait_time=15*(attempt+1)
                 print(f"Astept {wait_time} secunde...")
                 time.sleep(wait_time)
-        return None
+    return None
 
 def process_ticket(ticket_text):
     category, confidence, mode, results=find_similar_tickets_hybrid(ticket_text)
@@ -126,10 +132,16 @@ def process_ticket(ticket_text):
     }
 
 def route_ticket(ticket_text,confidence_threshold=0.5,distance_threshold=0.85):
+    # Thresholds below were chosen empirically, based on observing confidence/
+    # distance scores on test examples (not a rigorous optimization) - a clear
+    # candidate for future calibration
     category,confidence,mode, results=find_similar_tickets_hybrid(ticket_text)
     min_distance=min(r['distance'] for r in results) if results else float('inf')
 
     if confidence >= confidence_threshold and min_distance <= distance_threshold:
+        # Only auto-resolve if the model is CONFIDENT about the category AND
+        # found a sufficiently similar past case - either condition failing
+        # means an automatic response would be risky
         decision="AUTO_RESOLVE"
         response=generate_response_with_retry(ticket_text,results)
     else:
