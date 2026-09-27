@@ -24,7 +24,7 @@ tokenizer=DistilBertTokenizer.from_pretrained(MODEL_PATH)
 model_bert=DistilBertForSequenceClassification.from_pretrained(MODEL_PATH,torch_dtype=torch.float16)
 model_bert.eval()
 
-embedder= SentenceTransformer('all-MiniLM-L6-v2')
+embedder= SentenceTransformer('model_files/all-MiniLM-L6-v2')
 
 
 df_resolved= pd.read_csv("data/df_resolved.csv")
