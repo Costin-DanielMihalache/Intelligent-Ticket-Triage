@@ -15,6 +15,8 @@ import json
 from datetime import datetime
 from huggingface_hub import hf_hub_download
 from pathlib import Path
+import random
+from google.genai import types
 
 torch.set_grad_enabled(False) # inference only - no training here, saves memory/time
 torch.set_num_threads(1) # avoid over-allocating threads on resource-limited Cloud run instances
@@ -91,7 +93,7 @@ def find_similar_tickets_hybrid(query_text,k=5, confidence_threshold=0.5):
 
 load_dotenv()
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY")
-client_gemini=genai.Client(api_key=GEMINI_API_KEY)
+client_gemini=genai.Client(api_key=GEMINI_API_KEY, http_options=types.HttpOptions(timeout=10_000))
 
 def generate_response(ticket_text,similar_results):
     context=""
@@ -112,16 +114,29 @@ Write a professional and empathetic response to the new ticket, inspired by the 
     )
     return response.text
 
-def generate_response_with_retry(ticket_text,similar_results,max_retries=6):
+RETRYABLE_CODES={429,500,502,503,504}
+
+def _is_retryable(exc):
+    # google-genai API errors expose the HTTP status as `.code`; errors without
+    # one (timeouts, connection resets) are treated as transient. Client errors
+    # like 400/401/403 (bad request, bad key) will never succeed on retry.
+    code=getattr(exc,"code",None)
+    return code is None or code in RETRYABLE_CODES
+
+def generate_response_with_retry(ticket_text,similar_results,max_retries=3,base_delay=1.0,max_delay=8.0):
     for attempt in range(max_retries):
         try:
             return generate_response(ticket_text,similar_results)
         except Exception as e:
-            print(f"Attempt {attempt+1}/{max_retries} failed: {e}")
-            if attempt< max_retries-1:
-                wait_time=15*(attempt+1)
-                print(f"Waiting {wait_time} seconds...")
-                time.sleep(wait_time)
+            retryable=_is_retryable(e)
+            logging.getLogger('ticket_triage').warning(
+                "Gemini call failed (attempt %d/%d, retryable=%s): %s",
+                attempt+1,max_retries,retryable,e)
+            if not retryable or attempt==max_retries-1:
+                return None
+            # Exponential backoff with full jitter: the random spread stops many
+            # instances from retrying in lockstep against a rate-limited API
+            time.sleep(random.uniform(0,min(max_delay,base_delay*2**attempt)))
     return None
 
 def process_ticket(ticket_text):
@@ -147,6 +162,10 @@ def route_ticket(ticket_text,confidence_threshold=0.5,distance_threshold=0.85):
         # means an automatic response would be risky
         decision="AUTO_RESOLVE"
         response=generate_response_with_retry(ticket_text,results)
+        if response is None:
+            # Gemini unavailable after retries: a ticket marked AUTO_RESOLVE with
+            # no answer would silently drop the customer, so hand it to a human
+            decision = "ESCALATE_TO_HUMAN"
     else:
         decision="ESCALATE_TO_HUMAN"
         response=None
