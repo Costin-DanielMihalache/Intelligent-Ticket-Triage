@@ -1,13 +1,16 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 from models import route_ticket_with_logging #logging-enabled version, used in production
 # (not route_ticket directly - we want every request recorded for monitoring/audit)
+from typing import Annotated
 from fastapi import HTTPException
 
 app=FastAPI(title="Intelligent Ticket Triage API")
 
+TicketText= Annotated[str,StringConstraints(strip_whitespace=True,min_length=1,max_length=2000)]
+
 class TicketRequest(BaseModel):
-    text:str
+    text:TicketText
 
 @app.post("/process-ticket")
 def process_ticket(request:TicketRequest):

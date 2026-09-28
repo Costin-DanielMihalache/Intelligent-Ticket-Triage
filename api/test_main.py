@@ -24,4 +24,12 @@ def test_process_ticket_vague_input():
 
 def test_process_ticket_empty_text():
     response=client.post("/process-ticket", json={"text":""})
-    assert response.status_code==200
+    assert response.status_code==422
+
+def test_process_ticket_whitespace_only():
+    response=client.post("/process-ticket", json={"text": "  "})
+    assert response.status_code==422
+
+def test_process_ticket_too_long():
+    response=client.post("/process-ticket",json={"text":"a" *2001})
+    assert response.status_code==422

@@ -68,13 +68,13 @@ def find_similar_tickets_hybrid(query_text,k=5, confidence_threshold=0.5):
 
         distances, indices= temp_index.search(query_embedding, min(k,len(filtered_df)))
         source_df=filtered_df
-        mode="filtrat"
+        mode="filtered"
     else:
         # Model is uncertain -> search across the whole dataset, to avoid
         # missing a relevant result just because classification was unsure
         distances,indices=index.search(query_embedding,k)
         source_df=df_resolved
-        mode="nefiltrat"
+        mode="unfiltered"
 
     results=[]
     for i,idx in enumerate(indices[0]):
@@ -114,10 +114,10 @@ def generate_response_with_retry(ticket_text,similar_results,max_retries=6):
         try:
             return generate_response(ticket_text,similar_results)
         except Exception as e:
-            print(f"Incercare {attempt+1}/{max_retries} esuata: {e}")
+            print(f"Attempt {attempt+1}/{max_retries} failed: {e}")
             if attempt< max_retries-1:
                 wait_time=15*(attempt+1)
-                print(f"Astept {wait_time} secunde...")
+                print(f"Waiting {wait_time} seconds...")
                 time.sleep(wait_time)
     return None
 
