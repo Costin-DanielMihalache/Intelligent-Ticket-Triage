@@ -151,10 +151,12 @@ activemq-data/
 .env
 .envrc
 .venv
-   api/model_files/*
-   !api/model_files/ticket-classifier-distilbert/
+api/model_files/*
+!api/model_files/ticket-classifier-distilbert/
 api/ticket_triage.log
 __pychache__/
+.idea/
+api.zip
 *.pyc
 env/
 venv/
