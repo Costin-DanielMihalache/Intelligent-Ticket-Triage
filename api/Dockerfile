@@ -6,13 +6,15 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py models.py ./
-
+COPY data/ ./data/
 
 # Download models and data at BUILD TIME, not at container startup -
 # Cloud Run can spin up new instances frequently (scale up/down), so
 # downloading at runtime would slow down every cold start and depend
 # on Hugging Face Hub being available in production
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2').save('model_files/all-MiniLM-L6-v2')"
+RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('mihalachecostindaniel/ticket-classifier-distilbert', local_dir='model_files/ticket-classifier-distilbert')"
+
 
 EXPOSE 8000
 
