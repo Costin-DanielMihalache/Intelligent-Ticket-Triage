@@ -151,7 +151,6 @@ activemq-data/
 .env
 .envrc
 .venv
-api/data/
    api/model_files/*
    !api/model_files/ticket-classifier-distilbert/
 api/ticket_triage.log
