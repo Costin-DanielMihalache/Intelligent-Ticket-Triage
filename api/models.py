@@ -14,11 +14,13 @@ import logging
 import json
 from datetime import datetime
 from huggingface_hub import hf_hub_download
+from pathlib import Path
 
 torch.set_grad_enabled(False) # inference only - no training here, saves memory/time
 torch.set_num_threads(1) # avoid over-allocating threads on resource-limited Cloud run instances
 
-MODEL_PATH="model_files/ticket-classifier-distilbert"
+BASE_DIR= Path(__file__).resolve().parent
+MODEL_PATH=str(BASE_DIR/"model_files"/"ticket-classifier-distilbert")
 
 tokenizer=DistilBertTokenizer.from_pretrained(MODEL_PATH)
 model_bert=DistilBertForSequenceClassification.from_pretrained(MODEL_PATH,torch_dtype=torch.float16)
@@ -26,11 +28,12 @@ model_bert=DistilBertForSequenceClassification.from_pretrained(MODEL_PATH,torch_
 # accuracy impact - important on memory-limited cloud instances
 model_bert.eval()
 
-embedder= SentenceTransformer('model_files/all-MiniLM-L6-v2')
+MODEL_DIR=BASE_DIR/"model_files"/"all-MiniLM-L6-v2"
+embedder= SentenceTransformer(str(MODEL_DIR))
 
-
-df_resolved= pd.read_csv("data/df_resolved.csv")
-ticket_embeddings=np.load("data/ticket_embeddings.npy")
+DATA_DIR=BASE_DIR/"data"
+df_resolved= pd.read_csv(DATA_DIR/"df_resolved.csv")
+ticket_embeddings=np.load(DATA_DIR/"ticket_embeddings.npy")
 
 dimension=ticket_embeddings.shape[1]
 index=faiss.IndexFlatL2(dimension)
