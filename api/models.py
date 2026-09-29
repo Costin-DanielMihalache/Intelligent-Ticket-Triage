@@ -17,6 +17,8 @@ from huggingface_hub import hf_hub_download
 from pathlib import Path
 import random
 from google.genai import types
+import sys
+import hashlib
 
 torch.set_grad_enabled(False) # inference only - no training here, saves memory/time
 torch.set_num_threads(1) # avoid over-allocating threads on resource-limited Cloud run instances
@@ -180,20 +182,31 @@ def route_ticket(ticket_text,confidence_threshold=0.5,distance_threshold=0.85):
         'generated_response': response
     }
 
+class JsonFormatter(logging.Formatter):
+    #One JSON object per line on stdout: Cloud Logging turns  it into a structured
+    #entry and reads the "severity" key, so filtering by WARNING/ERROR works
+    def format(self,record):
+        payload={"severity":record.levelname,"message":record.getMessage()}
+        payload.update(getattr(record,"fields",{}))
+        return json.dumps(payload)
+
 logger= logging.getLogger('ticket_triage')
 logger.setLevel(logging.INFO)
+logger.propagate=False
 
 if not logger.handlers:
-    file_handler=logging.FileHandler('ticket_triage.log')
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-    logger.addHandler(file_handler)
+    handler=logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonFormatter())
+    logger.addHandler(handler)
 
 
 def route_ticket_with_logging(ticket_text,confidence_threshold=0.5, distance_threshold=0.85):
     result=route_ticket(ticket_text,confidence_threshold,distance_threshold)
+    # Never log the ticket body: real tickets can contain personal data.
+    # A short hash still lets us correlate repeats without storing the content.
     log_entry={
-        'timestamp':datetime.now().isoformat(),
-        'ticket':ticket_text,
+        'ticket_hash':hashlib.sha256(ticket_text.encode()).hexdigest()[:12],
+        'ticket_length':len(ticket_text),
         'category':result['category'],
         'confidence':round(float(result['confidence']),3),
         'retrieval_mode':result['retrieval_mode'],
@@ -201,5 +214,5 @@ def route_ticket_with_logging(ticket_text,confidence_threshold=0.5, distance_thr
         'decision':result['decision']
     }
 
-    logger.info(json.dumps(log_entry))
+    logger.info("ticket_routed",extra={"fields":log_entry})
     return result
