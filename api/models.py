@@ -12,13 +12,12 @@ from google import genai
 import time
 import logging
 import json
-from datetime import datetime
-from huggingface_hub import hf_hub_download
 from pathlib import Path
 import random
 from google.genai import types
 import sys
 import hashlib
+import re
 
 torch.set_grad_enabled(False) # inference only - no training here, saves memory/time
 torch.set_num_threads(1) # avoid over-allocating threads on resource-limited Cloud run instances
@@ -162,12 +161,17 @@ def route_ticket(ticket_text,confidence_threshold=0.5,distance_threshold=0.85):
         # Only auto-resolve if the model is CONFIDENT about the category AND
         # found a sufficiently similar past case - either condition failing
         # means an automatic response would be risky
-        decision="AUTO_RESOLVE"
-        response=generate_response_with_retry(ticket_text,results)
+        decision = "AUTO_RESOLVE"
+        response = generate_response_with_retry(ticket_text, results)
         if response is None:
             # Gemini unavailable after retries: a ticket marked AUTO_RESOLVE with
             # no answer would silently drop the customer, so hand it to a human
             decision = "ESCALATE_TO_HUMAN"
+        elif contains_unfilled_placeholder(response):
+            # A reply with a raw <tel_num> or [Your Name] token is worse than no
+            # reply - it looks broken to the customer, so treat it as a failure
+            decision = "ESCALATE_TO_HUMAN"
+            response = None
     else:
         decision="ESCALATE_TO_HUMAN"
         response=None
@@ -216,3 +220,12 @@ def route_ticket_with_logging(ticket_text,confidence_threshold=0.5, distance_thr
 
     logger.info("ticket_routed",extra={"fields":log_entry})
     return result
+
+# Retrieved examples' answers are anonymized (<tel_num>, <acc_num>) or use
+# template blanks ([Your Name], [Customer Name]) - the eval found Gemini
+# sometimes copies these tokens verbatim instead of filling them in
+PLACEHOLDER_PATTERN=re.compile(r'<[a-z_]+>|\[[A-Za-z][A-Za-z ]*\]')
+
+def contains_unfilled_placeholder(text):
+    return bool(PLACEHOLDER_PATTERN.search(text))
+

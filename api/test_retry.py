@@ -61,3 +61,23 @@ def test_auto_resolves_when_gemini_answers(monkeypatch):
     _confident_match(monkeypatch)
     result=models.route_ticket("card charged twice")
     assert result["decision"]=="AUTO_RESOLVE"
+
+def test_escalates_when_response_has_unfilled_placeholder(monkeypatch):
+    _confident_match(monkeypatch)
+    monkeypatch.setattr(models,"generate_response_with_retry",
+        lambda *a,**k: "Thanks for reaching out. Call me at <tel_num>.")
+    result=models.route_ticket("card charged twice")
+    assert result["decision"]=="ESCALATE_TO_HUMAN"
+    assert result["generated_response"] is None
+
+def test_does_not_escalate_on_clean_response(monkeypatch):
+    _confident_match(monkeypatch)
+    monkeypatch.setattr(models,"generate_response_with_retry",
+        lambda *a,**k: "Thanks for reaching out. We'll look into it.")
+    result=models.route_ticket("card charged twice")
+    assert result["decision"]=="AUTO_RESOLVE"
+
+def test_contains_unfilled_placeholder():
+    assert models.contains_unfilled_placeholder("Call me at <tel_num>.")
+    assert models.contains_unfilled_placeholder("Reach out to [Your Name].")
+    assert not models.contains_unfilled_placeholder("This is a normal reply.")
